@@ -31,7 +31,7 @@ inside a **distrobox** container. It needs no root and no kernel module.
 - [How it works](#how-it-works)
 - [Troubleshooting](#troubleshooting)
 - [Development](#development)
-- [Credits](#credits)
+- [Credits](#credits) · [License](#license)
 
 ## Features
 
@@ -329,3 +329,11 @@ RIVALCFG_DRY=1 RIVALCFG_PROFILE=1038:1858 .venv/bin/aerox9ctl gui
   PR #243 by zebreus.
 - [cython-hidapi](https://github.com/trezor/cython-hidapi) and
   [PySide6](https://doc.qt.io/qtforpython-6/).
+
+## License
+
+[MIT](LICENSE) © 2026 Philipp Kilb. Dependencies keep their own licenses: rivalcfg
+(WTFPL), hidapi (BSD / GPL-3.0 / original hidapi license), PySide6 (LGPL-3.0).
+
+"SteelSeries" and "Aerox" are trademarks of SteelSeries ApS, used here only to
+name the hardware this tool works with.
