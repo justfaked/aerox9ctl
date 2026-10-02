@@ -1,0 +1,12 @@
+[Unit]
+Description=Re-apply SteelSeries Aerox 9 lighting when the mouse wakes up or reconnects
+Documentation=https://github.com/flozz/rivalcfg
+
+[Service]
+# Installed by install.sh, which replaces @BIN_DIR@ with the launcher directory.
+ExecStart=@BIN_DIR@/aerox9ctl daemon
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=default.target

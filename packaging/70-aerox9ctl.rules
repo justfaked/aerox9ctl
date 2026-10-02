@@ -1,0 +1,7 @@
+# Give the logged-in user access to the SteelSeries Aerox 9 Wireless HID interfaces.
+# Only needed if `aerox9ctl status` fails with a permission error. Install on the host:
+#   sudo cp packaging/70-aerox9ctl.rules /etc/udev/rules.d/
+#   sudo udevadm control --reload && sudo udevadm trigger
+# then re-plug the dongle/cable.
+# 1858/1874: 2.4 GHz dongle (normal / WOW Edition), 185a/1876: USB cable.
+SUBSYSTEM=="hidraw", KERNEL=="hidraw*", ATTRS{idVendor}=="1038", ATTRS{idProduct}=="1858|185a|1874|1876", TAG+="uaccess"
