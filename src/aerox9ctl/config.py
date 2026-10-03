@@ -27,6 +27,7 @@ LIGHTING_EFFECTS = ("static", "rainbow")
 STARTUP_LIGHTING = ("off", "reactive", "rainbow", "reactive-rainbow")
 SLEEP_TIMER_MAX = 20  # minutes
 DIM_TIMER_MAX = 1200  # seconds
+BRIGHTNESS_MAX = 100  # percent
 
 _PROFILE_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 _.-]{0,63}$")
 
@@ -45,6 +46,14 @@ def normalize_color(value: str, *, allow_off: bool = False) -> str:
     if not is_color(text):
         raise ConfigError(f"invalid color {value!r} (use #rrggbb, #rgb or a color name)")
     return "#%02x%02x%02x" % parse_color_string(text)
+
+
+def dim_color(color: str, brightness: int) -> str:
+    """``color`` (``#rrggbb`` or ``"off"``) scaled to ``brightness`` percent."""
+    if color == "off" or brightness >= BRIGHTNESS_MAX:
+        return color
+    channels = (int(color[i : i + 2], 16) for i in (1, 3, 5))
+    return "#" + "".join("%02x" % round(value * brightness / BRIGHTNESS_MAX) for value in channels)
 
 
 def parse_dpi_list(value) -> tuple[int, ...]:
@@ -82,6 +91,9 @@ class MouseConfig:
     middle_color: str = "#00ff00"
     bottom_color: str = "#0000ff"
     reactive_color: str = "off"
+    # The mouse has no brightness setting: colors are scaled by this before
+    # sending. Profiles keep the full colors. The rainbow effect is unaffected.
+    brightness: int = 100  # percent
     startup_lighting: str = "rainbow"
     sleep_timer: int = 5  # minutes, 0 = never
     dim_timer: int = 30  # seconds, 0 = never
@@ -113,6 +125,7 @@ class MouseConfig:
         for name in ("top_color", "middle_color", "bottom_color"):
             object.__setattr__(self, name, normalize_color(getattr(self, name)))
         object.__setattr__(self, "reactive_color", normalize_color(self.reactive_color, allow_off=True))
+        _check_int("brightness", self.brightness, 0, BRIGHTNESS_MAX)
         _check_int("sleep_timer", self.sleep_timer, 0, SLEEP_TIMER_MAX)
         _check_int("dim_timer", self.dim_timer, 0, DIM_TIMER_MAX)
         if self.buttons is not None:

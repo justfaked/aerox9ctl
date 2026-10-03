@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import sys
 
-from PySide6.QtCore import QObject, QSocketNotifier, QThread, QTimer, Signal, Slot
+from PySide6.QtCore import QObject, QSocketNotifier, Qt, QThread, QTimer, Signal, Slot
 from PySide6.QtGui import QColor, QFontDatabase, QIcon
 from PySide6.QtWidgets import (
     QApplication,
@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
     QProgressBar,
     QPushButton,
     QRadioButton,
+    QSlider,
     QSpinBox,
     QTabWidget,
     QVBoxLayout,
@@ -255,6 +256,19 @@ class MainWindow(QMainWindow):
         reactive_row.addWidget(self.reactive_color)
         form.addRow("Reactive:", reactive_row)
 
+        brightness_row = QHBoxLayout()
+        self.brightness = QSlider(Qt.Horizontal)
+        self.brightness.setRange(0, cfg.BRIGHTNESS_MAX)
+        self.brightness.setPageStep(10)
+        self.brightness.setToolTip("Dims the static and click-flash colors. The rainbow effect stays at full brightness.")
+        self.brightness_label = QLabel("0%")
+        self.brightness_label.setMinimumWidth(40)
+        self.brightness.valueChanged.connect(lambda value: self.brightness_label.setText(f"{value}%"))
+        self.brightness.valueChanged.connect(self._on_form_changed)
+        brightness_row.addWidget(self.brightness, 1)
+        brightness_row.addWidget(self.brightness_label)
+        form.addRow("Brightness:", brightness_row)
+
         self.startup = QComboBox()
         for key, label in STARTUP_LABELS.items():
             self.startup.addItem(label, key)
@@ -406,6 +420,7 @@ class MainWindow(QMainWindow):
             reactive_on = config.reactive_color != "off"
             self.reactive_enabled.setChecked(reactive_on)
             self.reactive_color.set_color(config.reactive_color if reactive_on else "#ffffff")
+            self.brightness.setValue(config.brightness)
             self.startup.setCurrentIndex(self.startup.findData(config.startup_lighting))
             self.sleep_timer.setValue(config.sleep_timer)
             self.dim_timer.setValue(config.dim_timer)
@@ -429,6 +444,7 @@ class MainWindow(QMainWindow):
             middle_color=self.zone_buttons["middle_color"].color(),
             bottom_color=self.zone_buttons["bottom_color"].color(),
             reactive_color=self.reactive_color.color() if self.reactive_enabled.isChecked() else "off",
+            brightness=self.brightness.value(),
             startup_lighting=self.startup.currentData(),
             sleep_timer=self.sleep_timer.value(),
             dim_timer=self.dim_timer.value(),

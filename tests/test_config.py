@@ -36,6 +36,14 @@ def test_reactive_color_can_be_off(value):
     assert MouseConfig(reactive_color=value).reactive_color == "off"
 
 
+@pytest.mark.parametrize(
+    "color, brightness, expected",
+    [("#ff8000", 100, "#ff8000"), ("#ff8000", 50, "#804000"), ("#ffffff", 0, "#000000"), ("off", 30, "off")],
+)
+def test_dim_color(color, brightness, expected):
+    assert cfg.dim_color(color, brightness) == expected
+
+
 def test_dpi_accepts_strings():
     assert MouseConfig(dpi_presets="400, 800,1600").dpi_presets == (400, 800, 1600)
 
@@ -59,6 +67,8 @@ def test_dpi_accepts_strings():
         ({"dim_timer": -1}, "dim_timer"),
         ({"dim_timer": True}, "integer"),
         ({"sleep_timer": "5"}, "integer"),
+        ({"brightness": 101}, "brightness"),
+        ({"brightness": -1}, "brightness"),
     ],
 )
 def test_invalid_values_are_rejected(changes, message):

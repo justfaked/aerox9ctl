@@ -23,7 +23,7 @@ import rivalcfg.mouse
 import rivalcfg.usbhid
 
 from . import buttons as btn
-from .config import MouseConfig
+from .config import MouseConfig, dim_color
 
 if os.environ.get("AEROX9CTL_HID_BACKEND", "hidraw") == "hidraw":
     try:
@@ -65,6 +65,7 @@ FIELD_GROUPS = {
     "middle_color": GROUP_LIGHTING,
     "bottom_color": GROUP_LIGHTING,
     "reactive_color": GROUP_LIGHTING,
+    "brightness": GROUP_LIGHTING,
     "buttons": GROUP_BUTTONS,
 }
 
@@ -110,10 +111,13 @@ def plan_commands(config: MouseConfig, groups=ALL_GROUPS) -> list[tuple[str, tup
         calls.append(("default_lighting", (config.startup_lighting,)))
     if GROUP_LIGHTING in groups:
         # Colors are always sent so they are in place when switching back from rainbow.
-        calls.append(("z1_color", (config.top_color,)))
-        calls.append(("z2_color", (config.middle_color,)))
-        calls.append(("z3_color", (config.bottom_color,)))
-        calls.append(("reactive_color", (config.reactive_color,)))
+        def dimmed(color):
+            return (dim_color(color, config.brightness),)
+
+        calls.append(("z1_color", dimmed(config.top_color)))
+        calls.append(("z2_color", dimmed(config.middle_color)))
+        calls.append(("z3_color", dimmed(config.bottom_color)))
+        calls.append(("reactive_color", dimmed(config.reactive_color)))
         # Last: setting any color cancels the rainbow effect.
         if config.lighting == "rainbow":
             calls.append(("rainbow_effect", ()))

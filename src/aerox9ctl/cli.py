@@ -59,7 +59,7 @@ def _changes_from_args(args) -> dict:
         changes["lighting"] = "static"  # picking a color means you want to see it
     if args.lighting is not None:
         changes["lighting"] = args.lighting
-    for name in ("reactive_color", "startup_lighting", "sleep_timer", "dim_timer"):
+    for name in ("reactive_color", "brightness", "startup_lighting", "sleep_timer", "dim_timer"):
         if getattr(args, name) is not None:
             changes[name] = getattr(args, name)
     return changes
@@ -250,6 +250,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--middle-color", dest="middle_color", metavar="COLOR")
     p.add_argument("--bottom-color", dest="bottom_color", metavar="COLOR")
     p.add_argument("--reactive-color", metavar="COLOR|off", help="flash color on click, or 'off'")
+    p.add_argument("--brightness", type=int, metavar="PCT",
+                   help=f"LED brightness for colors, 0-{cfg.BRIGHTNESS_MAX}%% (no effect on rainbow)")
     p.add_argument("--startup-lighting", choices=cfg.STARTUP_LIGHTING,
                    help="lighting the mouse shows at power-on (colors are not stored in the mouse)")
     p.add_argument("--sleep-timer", type=int, metavar="MIN", help=f"minutes until sleep, 0-{cfg.SLEEP_TIMER_MAX} (0 = never)")

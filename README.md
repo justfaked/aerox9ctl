@@ -44,6 +44,7 @@ inside a **distrobox** container. It needs no root and no kernel module.
 | Button mapping (20 buttons) | mouse buttons, DPI cycle, scroll, disabled, media keys, up to 4 keys together (`LeftShift+1`, `ctrl+c`) | ✅ |
 | Lighting: 3 zones (top / middle / bottom) | static colors or rainbow | ❌ *(re-applied by the [daemon](#why-lighting-needs-a-background-service))* |
 | Reactive lighting | flash color on click | ❌ *(same)* |
+| Brightness | 0–100 %, dims static and click colors (not rainbow) | ❌ *(same)* |
 | Battery | level + charging state, tray icon, low-battery warnings | – |
 | Button tester | shows what each button sends (read-only) | – |
 | Profiles | named TOML files, switchable from app, tray or CLI | – |
@@ -151,6 +152,7 @@ aerox9ctl set --color "#ff6600"         # all zones (implies --lighting static)
 aerox9ctl set --top-color red --bottom-color purple
 aerox9ctl set --lighting rainbow
 aerox9ctl set --reactive-color white    # flash on click ('off' to disable)
+aerox9ctl set --brightness 40           # dim the colors to 40 % (rainbow stays full)
 aerox9ctl set --startup-lighting off    # what the mouse shows at power-on
 aerox9ctl set --sleep-timer 10 --dim-timer 60
 aerox9ctl set ... --no-save             # apply without writing to onboard memory
@@ -212,6 +214,7 @@ top_color = "#ff6600"          # #rrggbb, #rgb or a name (red, lime, blue, aqua,
 middle_color = "#ff6600"
 bottom_color = "#8000ff"
 reactive_color = "off"         # a color, or "off"
+brightness = 100               # percent; colors above are scaled down when sent
 startup_lighting = "off"       # off | reactive | rainbow | reactive-rainbow
 sleep_timer = 10               # minutes, 0 = never
 dim_timer = 60                 # seconds, 0 = never

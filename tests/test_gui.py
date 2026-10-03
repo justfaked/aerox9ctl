@@ -25,10 +25,17 @@ def test_form_round_trip(window):
     config = cfg.MouseConfig(
         dpi_presets=(800, 1600, 3200), dpi_active=2, polling_rate=500, lighting="static",
         top_color="#112233", middle_color="#445566", bottom_color="#778899",
-        reactive_color="#abcdef", startup_lighting="reactive", sleep_timer=10, dim_timer=0,
+        reactive_color="#abcdef", brightness=40, startup_lighting="reactive", sleep_timer=10, dim_timer=0,
     )
     window.set_form(config)
     assert window.config_from_form() == config
+
+
+def test_brightness_label_follows_slider(window):
+    window.set_form(cfg.MouseConfig(brightness=0))
+    assert window.brightness_label.text() == "0%"
+    window.brightness.setValue(65)
+    assert window.brightness_label.text() == "65%"
 
 
 def test_shows_defaults_when_nothing_applied(window):

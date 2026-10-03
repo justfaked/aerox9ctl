@@ -32,6 +32,14 @@ def test_color_implies_static_lighting():
     assert cfg.load_state().lighting == "rainbow"
 
 
+def test_set_brightness_keeps_full_colors_in_state(written):
+    cfg.save_state(cfg.MouseConfig(lighting="static", top_color="#ff0000"))
+    assert main(["set", "--brightness", "25", "--no-save"]) == 0
+    assert packets("61 01 00 40 00 00") in written[0]
+    state = cfg.load_state()
+    assert (state.brightness, state.top_color, state.lighting) == (25, "#ff0000", "static")
+
+
 def test_set_dpi_keeps_active_preset_when_possible():
     cfg.save_state(cfg.MouseConfig(dpi_active=4))
     main(["set", "--dpi", "800,1600,3200,6400"])

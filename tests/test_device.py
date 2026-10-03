@@ -62,6 +62,18 @@ def test_apply_static_lighting_wire_format(written):
     )]
 
 
+def test_brightness_scales_the_colors_sent(written):
+    config = MouseConfig(lighting="static", top_color="#ff0000", middle_color="#ff8000",
+                         bottom_color="#0000ff", reactive_color="#ffffff", brightness=50)
+    device.apply(config, {"lighting"}, save=False)
+    assert written == [packets(
+        "61 01 00 80 00 00",
+        "61 01 01 80 40 00",
+        "61 01 02 00 00 80",
+        "66 01 00 80 80 80",
+    )]
+
+
 def test_apply_everything_sends_every_setting(written):
     device.apply(MouseConfig())
     sent = written[0]
