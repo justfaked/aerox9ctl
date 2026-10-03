@@ -1,5 +1,6 @@
 import pytest
 import rivalcfg.devices
+import rivalcfg.mouse
 
 from aerox9ctl import device
 from aerox9ctl.config import MouseConfig
@@ -71,6 +72,12 @@ def test_apply_everything_sends_every_setting(written):
 def test_battery_none_when_mouse_does_not_answer():
     # The simulated device answers with zeros, like a sleeping mouse
     assert device.read_battery() is None
+
+
+def test_battery_retries_until_a_dozing_mouse_answers(monkeypatch):
+    answers = iter([{"level": None, "is_charging": None}, {"level": 65, "is_charging": False}])
+    monkeypatch.setattr(rivalcfg.mouse.Mouse, "battery", property(lambda self: next(answers)))
+    assert device.read_battery() == device.Battery(level=65, charging=False)
 
 
 def test_device_not_found(monkeypatch):

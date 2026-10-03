@@ -33,6 +33,8 @@ if os.environ.get("AEROX9CTL_HID_BACKEND", "hidraw") == "hidraw":
     except ImportError:  # hidapi built without the hidraw backend: keep libusb
         pass
 
+BATTERY_ATTEMPTS = 3
+
 VENDOR_ID = 0x1038
 PRODUCT_IDS = {
     0x1858: "2.4 GHz",
@@ -180,10 +182,17 @@ def apply(config: MouseConfig, groups=ALL_GROUPS, *, save: bool = True) -> None:
             mouse.save()
 
 
-def read_battery() -> Battery | None:
-    """Battery state, or ``None`` when the mouse does not answer (asleep or off)."""
+def read_battery(attempts: int = BATTERY_ATTEMPTS) -> Battery | None:
+    """Battery state, or ``None`` when the mouse does not answer (asleep or off).
+
+    A dozing mouse misses rivalcfg's 200 ms reply window on the first query
+    but wakes up from it, so a few retries tell "slow" apart from "asleep".
+    """
     with open_mouse() as mouse:
-        info = mouse.battery
+        for _ in range(attempts):
+            info = mouse.battery
+            if info["level"] is not None:
+                break
     if info["level"] is None:
         return None
     return Battery(level=info["level"], charging=bool(info["is_charging"]))
