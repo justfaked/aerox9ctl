@@ -340,3 +340,7 @@ RIVALCFG_DRY=1 RIVALCFG_PROFILE=1038:1858 .venv/bin/aerox9ctl gui
 
 "SteelSeries" and "Aerox" are trademarks of SteelSeries ApS, used here only to
 name the hardware this tool works with.
+
+## Support
+
+If this tool is useful to you, you can [buy me a coffee](https://buymeacoffee.com/justfaked).
