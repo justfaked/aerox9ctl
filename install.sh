@@ -60,7 +60,16 @@ if [ "$uninstall" = 1 ]; then
 fi
 
 echo "==> Creating virtualenv in $VENV"
-python3 -m venv "$VENV"
+# A distro upgrade can swap python3 for a newer minor version; the old venv's
+# site-packages are then invisible to it, so start the venv over.
+py_version="$(python3 -c 'import sys; print("%d.%d" % sys.version_info[:2])')"
+venv_version="$(sed -n 's/^version *= *\([0-9]*\.[0-9]*\).*/\1/p' "$VENV/pyvenv.cfg" 2>/dev/null || true)"
+if [ -n "$venv_version" ] && [ "$venv_version" != "$py_version" ]; then
+    echo "    Python changed ($venv_version -> $py_version), rebuilding it"
+    python3 -m venv --clear "$VENV"
+else
+    python3 -m venv "$VENV"
+fi
 "$VENV/bin/python" -m pip install --quiet --upgrade pip
 if [ "$editable" = 1 ]; then
     "$VENV/bin/python" -m pip install --quiet --editable "$SRC[gui]"
