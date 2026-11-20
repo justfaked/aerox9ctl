@@ -12,8 +12,12 @@ are decoded from the interfaces' HID report descriptors:
 
 from __future__ import annotations
 
+import ctypes
 import os
 import select
+import sys
+import time
+from contextlib import contextmanager
 from pathlib import Path
 
 from rivalcfg.handlers.buttons import layout_multimedia, layout_qwerty
@@ -108,9 +112,64 @@ class ReportTracker:
 
 # --- device access ----------------------------------------------------------
 
+#: (usage page, usage) of each interface's top-level collection.
+INTERFACE_USAGES = {
+    IFACE_MOUSE: (0x01, 0x02),
+    IFACE_KEYBOARD: (0x01, 0x06),
+    IFACE_CONSUMER: (0x0C, 0x01),
+    IFACE_BOOT_KEYBOARD: (0x01, 0x06),
+}
+POLL_SECONDS = 0.01  # sources without a file descriptor are polled this often
+INPUT_MONITORING_HINT = (
+    "On macOS, allow the app you started aerox9ctl from (e.g. Terminal) under "
+    "System Settings > Privacy & Security > Input Monitoring, then restart it."
+)
+
+
+class HidrawSource:
+    """An input interface read straight from ``/dev/hidrawN`` (Linux)."""
+
+    def __init__(self, interface: int, path: Path):
+        self.interface = interface
+        self._fd: int | None = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
+
+    def fileno(self) -> int | None:
+        return self._fd
+
+    def read(self) -> bytes:
+        """The next report, ``b""`` if none is waiting. Raises OSError when unplugged."""
+        try:
+            return os.read(self._fd, 64)
+        except BlockingIOError:
+            return b""
+
+    def close(self) -> None:
+        if self._fd is not None:
+            os.close(self._fd)
+            self._fd = None
+
+
+class HidapiSource:
+    """An input interface read through hidapi (macOS). It has no file descriptor: poll it."""
+
+    def __init__(self, interface: int, path: bytes, hid_module):
+        self.interface = interface
+        self._device = hid_module.device()
+        self._device.open_path(path)
+        self._device.set_nonblocking(1)
+
+    def fileno(self) -> int | None:
+        return None
+
+    def read(self) -> bytes:
+        return bytes(self._device.read(64))
+
+    def close(self) -> None:
+        self._device.close()
+
 
 def find_input_nodes(sysfs: Path = Path("/sys/class/hidraw")) -> dict[int, Path]:
-    """``{interface number: /dev/hidrawN}`` for the connected Aerox 9."""
+    """``{interface number: /dev/hidrawN}`` for the connected Aerox 9 (Linux)."""
     nodes = {}
     for entry in sorted(sysfs.glob("hidraw*")):
         try:
@@ -125,28 +184,118 @@ def find_input_nodes(sysfs: Path = Path("/sys/class/hidraw")) -> dict[int, Path]
             continue
         if vendor == VENDOR_ID and product in PRODUCT_IDS:
             nodes.setdefault(interface, Path("/dev") / entry.name)
-    wanted = {IFACE_MOUSE, IFACE_KEYBOARD, IFACE_CONSUMER, IFACE_BOOT_KEYBOARD}
-    nodes = {iface: path for iface, path in nodes.items() if iface in wanted}
+    nodes = {iface: path for iface, path in nodes.items() if iface in INTERFACE_USAGES}
     if not nodes:
         raise DeviceNotFound("no SteelSeries Aerox 9 Wireless found (is the dongle or cable plugged in?)")
     return nodes
 
 
-def listen(print_event=print, nodes: dict[int, Path] | None = None) -> None:
+def find_hidapi_inputs(hid_module) -> dict[int, bytes]:
+    """``{interface number: hidapi path}`` for the connected Aerox 9.
+
+    hidapi lists one entry per top-level collection; prefer the collection
+    whose usage matches what the interface is decoded as.
+    """
+    candidates: dict[int, list[dict]] = {}
+    for info in hid_module.enumerate(VENDOR_ID, 0):
+        if info["product_id"] in PRODUCT_IDS and info["interface_number"] in INTERFACE_USAGES:
+            candidates.setdefault(info["interface_number"], []).append(info)
+    if not candidates:
+        raise DeviceNotFound("no SteelSeries Aerox 9 Wireless found (is the dongle or cable plugged in?)")
+    paths = {}
+    for interface, infos in sorted(candidates.items()):
+        wanted = INTERFACE_USAGES[interface]
+        best = next((i for i in infos if (i.get("usage_page"), i.get("usage")) == wanted), infos[0])
+        paths[interface] = best["path"]
+    return paths
+
+
+@contextmanager
+def _shared_access(hid_module):
+    """Open devices without seizing them; yields False if that is not possible.
+
+    On macOS hidapi opens devices exclusively by default, which would take the
+    pointer and the side keys away from the system while listening. The Python
+    binding does not expose the switch, but the C function is built into its
+    extension module.
+    """
+    if sys.platform != "darwin":
+        yield True
+        return
+    try:
+        library = ctypes.CDLL(hid_module.__file__)
+        setter, getter = library.hid_darwin_set_open_exclusive, library.hid_darwin_get_open_exclusive
+    except (OSError, AttributeError, TypeError):
+        yield False
+        return
+    previous = getter()
+    setter(0)
+    try:
+        yield True
+    finally:
+        setter(previous)
+
+
+def _open_hidapi_inputs() -> list[HidapiSource]:
+    import hid
+
+    paths = find_hidapi_inputs(hid)
+    sources, failed = [], []
+    with _shared_access(hid) as shared:
+        if not shared:  # seizing the mouse interface would freeze the pointer
+            paths.pop(IFACE_MOUSE, None)
+        for interface, path in paths.items():
+            try:
+                sources.append(HidapiSource(interface, path, hid))
+            except OSError:
+                failed.append(interface)
+    if failed:
+        for source in sources:
+            source.close()
+        hint = f" {INPUT_MONITORING_HINT}" if sys.platform == "darwin" else ""
+        names = ", ".join(str(interface) for interface in failed)
+        raise OSError(f"cannot open the mouse's input interface(s) {names}.{hint}")
+    return sources
+
+
+def open_inputs() -> list:
+    """Open the mouse's input interfaces read-only (hidraw on Linux, hidapi elsewhere)."""
+    if not sys.platform.startswith("linux"):
+        return _open_hidapi_inputs()
+    sources = []
+    try:
+        for interface, path in find_input_nodes().items():
+            sources.append(HidrawSource(interface, path))
+    except OSError:
+        for source in sources:
+            source.close()
+        raise
+    return sources
+
+
+def drain(source, tracker: ReportTracker) -> list[str]:
+    """Events from every report waiting on ``source``. Raises OSError when unplugged."""
+    events = []
+    while report := source.read():
+        events += tracker.feed(source.interface, report)
+    return events
+
+
+def listen(print_event=print, sources: list | None = None) -> None:
     """Print button events until interrupted (Ctrl+C)."""
-    nodes = nodes or find_input_nodes()
-    fds = {os.open(path, os.O_RDONLY | os.O_NONBLOCK): iface for iface, path in nodes.items()}
+    sources = open_inputs() if sources is None else sources
+    pollable = all(source.fileno() is not None for source in sources)
     tracker = ReportTracker()
     try:
         while True:
-            ready, _, _ = select.select(list(fds), [], [])
-            for fd in ready:
-                try:
-                    report = os.read(fd, 64)
-                except BlockingIOError:
-                    continue
-                for event in tracker.feed(fds[fd], report):
+            if pollable:
+                ready, _, _ = select.select(sources, [], [])
+            else:
+                ready = sources
+                time.sleep(POLL_SECONDS)
+            for source in ready:
+                for event in drain(source, tracker):
                     print_event(event)
     finally:
-        for fd in fds:
-            os.close(fd)
+        for source in sources:
+            source.close()

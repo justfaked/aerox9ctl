@@ -99,6 +99,7 @@ def test_invalid_button_action_is_reported_not_sent(window, written, monkeypatch
 def test_live_tester(window, tmp_path, monkeypatch):
     fifo = tmp_path / "hidraw-fake"
     os.mkfifo(fifo)
+    monkeypatch.setattr("aerox9ctl.tester.sys.platform", "linux")
     monkeypatch.setattr("aerox9ctl.tester.find_input_nodes", lambda: {0: fifo})
     window.tester_toggle.setChecked(True)
     writer = os.open(fifo, os.O_WRONLY | os.O_NONBLOCK)
@@ -112,7 +113,55 @@ def test_live_tester(window, tmp_path, monkeypatch):
     os.close(writer)
     assert "pressed:  mouse button4" in window.tester_log.toPlainText()
     window.tester_toggle.setChecked(False)
-    assert window._tester_fds == {}
+    assert window._tester_sources == []
+
+
+class PolledSource:
+    """Like tester.HidapiSource (macOS): no file descriptor, reports come from polling."""
+
+    interface = 0
+    closed = False
+
+    def __init__(self, *reports):
+        self.reports = list(reports)
+
+    def fileno(self):
+        return None
+
+    def read(self):
+        return self.reports.pop(0) if self.reports else b""
+
+    def close(self):
+        self.closed = True
+
+
+def test_live_tester_polls_sources_without_fd(window, monkeypatch):
+    source = PolledSource(bytes([0b1000] + [0] * 11), bytes(12))  # button 4 down, up
+    monkeypatch.setattr("aerox9ctl.tester.open_inputs", lambda: [source])
+    window.tester_toggle.setChecked(True)
+    app = QApplication.instance()
+    for _ in range(100):
+        app.processEvents()
+        if "released: mouse button4" in window.tester_log.toPlainText():
+            break
+        time.sleep(0.01)
+    assert "pressed:  mouse button4" in window.tester_log.toPlainText()
+    assert "released: mouse button4" in window.tester_log.toPlainText()
+    window.tester_toggle.setChecked(False)
+    assert source.closed
+    assert not window._tester_poll.isActive()
+
+
+def test_tester_open_error_is_shown(window, monkeypatch):
+    def fail():
+        raise OSError("cannot open the mouse's input interface(s) 1. Input Monitoring")
+
+    warnings = []
+    monkeypatch.setattr("aerox9ctl.tester.open_inputs", fail)
+    monkeypatch.setattr("aerox9ctl.gui.QMessageBox.warning", lambda *args: warnings.append(args[2]))
+    window.tester_toggle.setChecked(True)
+    assert warnings and "Input Monitoring" in warnings[0]
+    assert not window.tester_toggle.isChecked()
 
 
 def test_factory_defaults_keeps_buttons_tab(window):

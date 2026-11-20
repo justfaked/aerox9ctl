@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "aerox9ctl"
 version = "0.1.0"
-description = "Configure the SteelSeries Aerox 9 Wireless on Linux (CLI + Qt GUI), built on rivalcfg"
+description = "Configure the SteelSeries Aerox 9 Wireless on Linux and macOS (CLI + Qt GUI), built on rivalcfg"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"

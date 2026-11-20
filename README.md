@@ -1,12 +1,14 @@
-# aerox9ctl — SteelSeries Aerox 9 Wireless on Linux
+# aerox9ctl — SteelSeries Aerox 9 Wireless on Linux and macOS
 
-Configure the **SteelSeries Aerox 9 Wireless** on Linux without SteelSeries GG: DPI,
+Configure the **SteelSeries Aerox 9 Wireless** on Linux and macOS without SteelSeries GG: DPI,
 polling rate, lighting, power timers and **all 20 buttons, including the 12-button side
 keypad**. It comes with a command line tool, a Qt desktop app and a system tray battery
 indicator.
 
 It's built for immutable distros like **Bazzite** and works the same on the host or
 inside a **distrobox** container. It needs no root and no kernel module.
+**macOS** is supported too, but hasn't been tested on a real Mac yet
+([details](#macos)).
 
 <p align="center">
   <img src="docs/images/gui-general.png" alt="General settings: DPI presets, polling rate, lighting and power timers" width="48%">
@@ -25,7 +27,7 @@ inside a **distrobox** container. It needs no root and no kernel module.
 
 - [Features](#features)
 - [What has been confirmed on hardware](#what-has-been-confirmed-on-hardware)
-- [Installation](#installation)
+- [Installation](#installation): [Linux](#installation), [macOS](#macos)
 - [Usage](#usage): [desktop app](#desktop-app), [tray icon](#tray-icon), [command line](#command-line), [buttons](#button-mapping), [profiles](#profiles)
 - [Why lighting needs a background service](#why-lighting-needs-a-background-service)
 - [How it works](#how-it-works)
@@ -68,13 +70,15 @@ a simulated device. On a real Aerox 9 (2.4 GHz dongle) so far:
 | DPI / active preset, polling rate, lighting, timers | ⚠️ protocol from rivalcfg, not confirmed with this tool yet |
 | Daemon wake detection (does the battery query return nothing while asleep?) | ⚠️ not confirmed yet |
 | USB cable mode | ⚠️ not tested |
+| macOS (install, app, tray, daemon, button tester) | ⚠️ not tested on a real Mac yet |
 
 If you test one of the ⚠️ items, please open an issue with the result.
 
 ## Installation
 
 You need Python ≥ 3.11 with `venv`, plus a desktop session for the app and tray icon.
-The same script works on the host and inside a distrobox/toolbx container:
+On a Mac, see [macOS](#macos) below. On Linux, the same script works on the host and
+inside a distrobox/toolbx container:
 
 ```sh
 git clone https://github.com/justfaked/steelseries-mouse-util.git
@@ -110,6 +114,43 @@ sudo udevadm control --reload && sudo udevadm trigger
 
 (`/etc` is writable on Bazzite and other atomic Fedora systems.)
 
+### macOS
+
+You need Python ≥ 3.11. The `python3` that comes with macOS is too old, so install
+one with [Homebrew](https://brew.sh) (`brew install python@3.13`) or from
+[python.org](https://www.python.org/downloads/macos/). Then use the same script:
+
+```sh
+git clone https://github.com/justfaked/steelseries-mouse-util.git
+cd steelseries-mouse-util
+./install.sh                  # CLI + "Aerox 9 Wireless" app in ~/Applications
+./install.sh --tray           # + battery icon in the menu bar, now and at login
+./install.sh --daemon         # + background service that keeps your colors applied
+./install.sh --uninstall      # remove everything (profiles in ~/.config are kept)
+```
+
+On macOS the script:
+
+- Puts the virtualenv and the launchers in the same places as on Linux
+  (`~/.local/share/aerox9ctl/`, `~/.local/bin`). If `~/.local/bin` isn't in your
+  `PATH`, the script tells you how to add it.
+- Creates **Aerox 9 Wireless.app** in `~/Applications`, so you can find it in
+  Launchpad and Spotlight.
+- Runs the tray icon and the daemon as launchd agents
+  (`~/Library/LaunchAgents/io.github.justfaked.aerox9ctl.*.plist`) instead of an
+  autostart entry and a systemd service. Their logs go to `~/Library/Logs/`.
+
+Things to know on macOS:
+
+- **Quit SteelSeries GG** (including its menu bar helper) before using aerox9ctl.
+  Both programs talk to the same interface of the mouse and get in each other's way.
+- No udev rule or extra permissions are needed to change settings.
+- The **button tester** reads the mouse's keyboard interfaces, and macOS only allows
+  that with the **Input Monitoring** permission. If the tester says it can't open an
+  interface, allow the app you started it from (Terminal, or Aerox 9 Wireless) under
+  *System Settings → Privacy & Security → Input Monitoring*, then restart that app.
+- Settings and profiles live in `~/.config/aerox9ctl/`, the same as on Linux.
+
 ## Usage
 
 ### Desktop app
@@ -138,7 +179,8 @@ while charging, and grey `?` when the mouse is asleep or off.
 - **Right-click:** apply a profile, refresh, quit.
 
 It checks the battery once a minute and warns at 20% and 10%. On GNOME it needs the
-AppIndicator extension (Bazzite ships it).
+AppIndicator extension (Bazzite ships it). On macOS the icon sits in the menu bar
+and clicking it opens the menu, which has **Open settings…**.
 
 ### Command line
 
@@ -250,6 +292,13 @@ systemctl --user enable --now aerox9ctl-daemon.service
 journalctl --user -u aerox9ctl-daemon -f                # watch what it does
 ```
 
+On macOS, `./install.sh --daemon` runs it as a launchd agent instead:
+
+```sh
+launchctl print gui/$(id -u)/io.github.justfaked.aerox9ctl.daemon   # is it running?
+tail -f ~/Library/Logs/aerox9ctl-daemon.log                         # watch what it does
+```
+
 DPI, polling rate, timers, power-on lighting and the button mapping are stored on the
 mouse and don't need the daemon.
 
@@ -277,20 +326,26 @@ mouse and don't need the daemon.
   key codes (`51 E1 1E 00 00` = LeftShift+1), following the maintainer's captures in
   [#171](https://github.com/flozz/rivalcfg/issues/171).
 - **Button tester:** reads the mouse's standard input interfaces (mouse, keyboard,
-  boot keyboard, consumer control) and decodes the reports. It never writes.
+  boot keyboard, consumer control) and decodes the reports. It never writes. On Linux
+  it reads `/dev/hidraw*`. On macOS it goes through hidapi and opens the interfaces
+  without seizing them, so the pointer and the side keys keep working while it listens.
 - **hidraw backend:** the `hidapi` package uses libusb by default, which detaches the
   kernel driver. aerox9ctl switches rivalcfg to hidapi's hidraw backend, so only
   `/dev/hidraw*` access is needed. That's also why it works unchanged in containers.
-  Set `AEROX9CTL_HID_BACKEND=libusb` to switch back.
+  Set `AEROX9CTL_HID_BACKEND=libusb` to switch back. On macOS, hidapi uses the
+  system's own HID framework (IOKit).
 - **Locking:** the app, tray, CLI and daemon share a lock in `$XDG_RUNTIME_DIR` (shared
-  between host and distrobox), so their commands never interleave.
+  between host and distrobox; `~/Library/Caches/aerox9ctl` on macOS), so their
+  commands never interleave.
 
 ## Troubleshooting
 
 | Problem | What to do |
 | --- | --- |
 | `no SteelSeries Aerox 9 Wireless found` | Check the dongle/cable. Bluetooth mode isn't supported. |
-| `cannot talk to the mouse: open failed` | Install the [udev rule](#permissions) on the host and re-plug the dongle. |
+| `cannot talk to the mouse: open failed` | Install the [udev rule](#permissions) on the host and re-plug the dongle. On macOS: quit SteelSeries GG. |
+| macOS: button tester can't open an interface | Allow Terminal (or the app) under *Privacy & Security → Input Monitoring*, then restart it. |
+| macOS: `install.sh` says Python is too old | `brew install python@3.13`, or run it with `PYTHON=/path/to/python3 ./install.sh`. |
 | Battery shows "unavailable" | The mouse is asleep or switched off. Move it. |
 | Colors reset after sleep or power-off | Expected. Enable the [daemon](#why-lighting-needs-a-background-service). |
 | Side buttons type the wrong characters | Key names are US positions: see [button mapping](#button-mapping). |

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 import sys
 
 from PySide6.QtCore import QObject, QSocketNotifier, Qt, QThread, QTimer, Signal, Slot
@@ -374,9 +373,12 @@ class MainWindow(QMainWindow):
         self.tester_log.setPlaceholderText("Press Start, then press buttons on the mouse.")
         self.tester_log.setMinimumHeight(110)
         layout.addWidget(self.tester_log)
-        self._tester_fds = {}
+        self._tester_sources = []
         self._tester_notifiers = []
         self._tester_tracker = None
+        self._tester_poll = QTimer(self)  # for sources without a file descriptor (macOS)
+        self._tester_poll.setInterval(int(tester.POLL_SECONDS * 1000))
+        self._tester_poll.timeout.connect(self._poll_tester)
         return box
 
     def _build_action_row(self):
@@ -504,46 +506,52 @@ class MainWindow(QMainWindow):
             self._stop_tester()
             return
         try:
-            nodes = tester.find_input_nodes()
-            for iface, path in nodes.items():
-                self._tester_fds[os.open(path, os.O_RDONLY | os.O_NONBLOCK)] = iface
+            self._tester_sources = tester.open_inputs()
         except (device.DeviceNotFound, OSError) as error:
             self._stop_tester()
             self.tester_toggle.setChecked(False)
             QMessageBox.warning(self, "Cannot listen to the mouse", str(error))
             return
         self._tester_tracker = tester.ReportTracker()
-        for fd in self._tester_fds:
-            notifier = QSocketNotifier(fd, QSocketNotifier.Read, self)
-            notifier.activated.connect(lambda *_signal_args, fd=fd: self._read_tester(fd))
+        for source in self._tester_sources:
+            if source.fileno() is None:
+                continue
+            notifier = QSocketNotifier(source.fileno(), QSocketNotifier.Read, self)
+            notifier.activated.connect(lambda *_signal_args, source=source: self._read_tester(source))
             self._tester_notifiers.append(notifier)
+        if any(source.fileno() is None for source in self._tester_sources):
+            self._tester_poll.start()
         self.tester_toggle.setText("Stop listening")
         self.tester_log.appendPlainText("-- listening (the DPI button and disabled buttons produce no output)")
 
-    def _read_tester(self, fd: int):
-        if fd not in self._tester_fds:  # already stopped
+    def _poll_tester(self):
+        for source in list(self._tester_sources):
+            if source.fileno() is None:
+                self._read_tester(source)
+
+    def _read_tester(self, source):
+        if source not in self._tester_sources:  # already stopped
             return
         try:
-            report = os.read(fd, 64)
-        except BlockingIOError:
-            return
+            events = tester.drain(source, self._tester_tracker)
         except OSError as error:  # unplugged
             self.tester_log.appendPlainText(f"-- stopped: {error}")
             self.tester_toggle.setChecked(False)
             return
-        for event in self._tester_tracker.feed(self._tester_fds[fd], report):
+        for event in events:
             self.tester_log.appendPlainText(event)
 
     def _stop_tester(self):
+        self._tester_poll.stop()
         for notifier in self._tester_notifiers:
             notifier.setEnabled(False)
             notifier.deleteLater()
         self._tester_notifiers = []
-        for fd in self._tester_fds:
-            os.close(fd)
-        if self._tester_fds:
+        for source in self._tester_sources:
+            source.close()
+        if self._tester_sources:
             self.tester_log.appendPlainText("-- stopped")
-        self._tester_fds = {}
+        self._tester_sources = []
         self.tester_toggle.setText("Start listening")
 
     def _same_color_all_zones(self):

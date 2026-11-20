@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
+import ctypes
+import ctypes.util
 import fcntl
-import os
 import sys
-import tempfile
-from pathlib import Path
 
 from PySide6.QtCore import QObject, QRectF, Qt, QThread, QTimer, Signal, Slot
 from PySide6.QtGui import QAction, QColor, QFont, QIcon, QPainter, QPainterPath, QPen, QPixmap
@@ -183,7 +182,8 @@ class TrayApp(QObject):
         self.tray.showMessage("Aerox 9", message, QSystemTrayIcon.Information, 3000)
 
     def _on_activated(self, reason):
-        if reason == QSystemTrayIcon.Trigger:
+        # On macOS a click opens the menu (it has "Open settings…"): don't open both.
+        if reason == QSystemTrayIcon.Trigger and sys.platform != "darwin":
             self.open_settings()
 
     def open_settings(self):
@@ -219,14 +219,36 @@ class TrayApp(QObject):
 
 def _single_instance_lock():
     """Keep a lock for the lifetime of the process; None if another tray runs."""
-    base = os.environ.get("XDG_RUNTIME_DIR") or tempfile.gettempdir()
-    handle = open(Path(base) / "aerox9ctl-tray.lock", "a")
+    handle = open(cfg.runtime_dir() / "aerox9ctl-tray.lock", "a")
     try:
         fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except BlockingIOError:
         handle.close()
         return None
     return handle
+
+
+def _hide_dock_icon() -> None:
+    """macOS: run as a menu bar app, without a Dock icon or app menu.
+
+    Equivalent to ``[NSApp setActivationPolicy:NSApplicationActivationPolicyAccessory]``,
+    through the Objective-C runtime so PyObjC is not needed.
+    """
+    try:
+        objc = ctypes.cdll.LoadLibrary(ctypes.util.find_library("objc"))
+        objc.objc_getClass.restype = ctypes.c_void_p
+        objc.objc_getClass.argtypes = [ctypes.c_char_p]
+        objc.sel_registerName.restype = ctypes.c_void_p
+        objc.sel_registerName.argtypes = [ctypes.c_char_p]
+        send = ctypes.CFUNCTYPE(ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p)(("objc_msgSend", objc))
+        send_long = ctypes.CFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_long)(
+            ("objc_msgSend", objc)
+        )
+        app = send(objc.objc_getClass(b"NSApplication"), objc.sel_registerName(b"sharedApplication"))
+        if app:
+            send_long(app, objc.sel_registerName(b"setActivationPolicy:"), 1)  # accessory
+    except (OSError, AttributeError, TypeError):
+        pass  # cosmetic only: keep the Dock icon
 
 
 def main() -> int:
@@ -238,6 +260,8 @@ def main() -> int:
     app.setApplicationName("aerox9ctl")
     app.setDesktopFileName("aerox9ctl")
     app.setQuitOnLastWindowClosed(False)
+    if sys.platform == "darwin":
+        _hide_dock_icon()
     if not QSystemTrayIcon.isSystemTrayAvailable():
         print("error: no system tray available on this desktop.", file=sys.stderr)
         return 1

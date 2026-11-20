@@ -10,6 +10,8 @@ from __future__ import annotations
 import json
 import os
 import re
+import sys
+import tempfile
 import tomllib
 from dataclasses import asdict, dataclass, fields, replace
 from pathlib import Path
@@ -189,6 +191,22 @@ class MouseConfig:
 def config_dir() -> Path:
     base = os.environ.get("XDG_CONFIG_HOME") or os.path.join(os.path.expanduser("~"), ".config")
     return Path(base) / "aerox9ctl"
+
+
+def runtime_dir() -> Path:
+    """Where lock files go: one directory shared by every aerox9ctl process of the user.
+
+    On Linux that is ``$XDG_RUNTIME_DIR`` (also shared with distrobox). macOS has
+    no such directory, and ``$TMPDIR`` is not set for launchd agents, so the daemon
+    would lock a different file than the CLI: use the user's cache directory instead.
+    """
+    if os.environ.get("XDG_RUNTIME_DIR"):
+        return Path(os.environ["XDG_RUNTIME_DIR"])
+    if sys.platform == "darwin":
+        path = Path(os.path.expanduser("~")) / "Library" / "Caches" / "aerox9ctl"
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+    return Path(tempfile.gettempdir())
 
 
 def state_path() -> Path:

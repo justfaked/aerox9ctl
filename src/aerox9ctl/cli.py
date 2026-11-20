@@ -11,10 +11,16 @@ from . import buttons as btn
 from . import config as cfg
 from . import device
 
-_PERMISSION_HINT = (
-    "If this is a permission problem, install the udev rule from "
-    "packaging/70-aerox9ctl.rules on the host (see README) and re-plug the dongle."
-)
+if sys.platform == "darwin":
+    _PERMISSION_HINT = (
+        "On macOS this usually means another program has the mouse open: "
+        "quit SteelSeries GG (including its menu bar helper) and try again."
+    )
+else:
+    _PERMISSION_HINT = (
+        "If this is a permission problem, install the udev rule from "
+        "packaging/70-aerox9ctl.rules on the host (see README) and re-plug the dongle."
+    )
 
 
 def _battery_text(battery: device.Battery | None) -> str:
