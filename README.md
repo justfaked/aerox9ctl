@@ -7,8 +7,8 @@ indicator.
 
 It's built for immutable distros like **Bazzite** and works the same on the host or
 inside a **distrobox** container. It needs no root and no kernel module.
-**macOS** is supported too, but hasn't been tested on a real Mac yet
-([details](#macos)).
+**macOS** is supported too ([details](#macos)). So far it has been confirmed over
+the USB cable.
 
 <p align="center">
   <img src="docs/images/gui-general.png" alt="General settings: DPI presets, polling rate, lighting and power timers" width="48%">
@@ -70,7 +70,8 @@ a simulated device. On a real Aerox 9 (2.4 GHz dongle) so far:
 | DPI / active preset, polling rate, lighting, timers | ⚠️ protocol from rivalcfg, not confirmed with this tool yet |
 | Daemon wake detection (does the battery query return nothing while asleep?) | ⚠️ not confirmed yet |
 | USB cable mode | ⚠️ not tested |
-| macOS (install, app, tray, daemon, button tester) | ⚠️ not tested on a real Mac yet |
+| macOS: detection and changing settings over the USB cable | ✅ confirmed |
+| macOS: 2.4 GHz dongle, tray, daemon, button tester | ⚠️ not tested yet |
 
 If you test one of the ⚠️ items, please open an issue with the result.
 
@@ -144,6 +145,10 @@ Things to know on macOS:
 
 - **Quit SteelSeries GG** (including its menu bar helper) before using aerox9ctl.
   Both programs talk to the same interface of the mouse and get in each other's way.
+- **Using the cable:** set the mouse's switch to **off**, not Bluetooth. In Bluetooth
+  mode the Mac talks to the mouse over Bluetooth, which aerox9ctl doesn't support,
+  and the mouse doesn't show up as a USB device. When it does show up, macOS may ask
+  whether to allow the accessory to connect: allow it.
 - No udev rule or extra permissions are needed to change settings.
 - The **button tester** reads the mouse's keyboard interfaces, and macOS only allows
   that with the **Input Monitoring** permission. If the tester says it can't open an
@@ -344,6 +349,7 @@ mouse and don't need the daemon.
 | --- | --- |
 | `no SteelSeries Aerox 9 Wireless found` | Check the dongle/cable. Bluetooth mode isn't supported. |
 | `cannot talk to the mouse: open failed` | Install the [udev rule](#permissions) on the host and re-plug the dongle. On macOS: quit SteelSeries GG. |
+| macOS: `no SteelSeries Aerox 9 Wireless found` with the cable plugged in | Set the mouse's switch to off (not Bluetooth) and allow the accessory when macOS asks. |
 | macOS: button tester can't open an interface | Allow Terminal (or the app) under *Privacy & Security → Input Monitoring*, then restart it. |
 | macOS: `install.sh` says Python is too old | `brew install python@3.13`, or run it with `PYTHON=/path/to/python3 ./install.sh`. |
 | Battery shows "unavailable" | The mouse is asleep or switched off. Move it. |
