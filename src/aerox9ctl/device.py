@@ -2,9 +2,10 @@
 
 rivalcfg knows the Aerox 9 protocol; this module adds:
 
-* the hidraw backend instead of hidapi's libusb default, so the kernel driver
-  is never detached and plain ``/dev/hidraw*`` permissions are enough (which
-  also makes it work unchanged inside distrobox),
+* on Linux, the hidraw backend instead of hidapi's libusb default, so the
+  kernel driver is never detached and plain ``/dev/hidraw*`` permissions are
+  enough (which also makes it work unchanged inside distrobox). On macOS the
+  ``hid`` module already uses the native IOKit backend,
 * a lock so the GUI, the CLI and the daemon never interleave commands,
 * translation of a :class:`MouseConfig` into rivalcfg setting calls.
 """
@@ -13,7 +14,6 @@ from __future__ import annotations
 
 import fcntl
 import os
-import tempfile
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -23,14 +23,14 @@ import rivalcfg.mouse
 import rivalcfg.usbhid
 
 from . import buttons as btn
-from .config import MouseConfig, dim_color
+from .config import MouseConfig, dim_color, runtime_dir
 
 if os.environ.get("AEROX9CTL_HID_BACKEND", "hidraw") == "hidraw":
     try:
         import hidraw
 
         rivalcfg.usbhid.hid = hidraw
-    except ImportError:  # hidapi built without the hidraw backend: keep libusb
+    except ImportError:  # macOS, or hidapi built without hidraw: keep the default backend
         pass
 
 BATTERY_ATTEMPTS = 3
@@ -127,8 +127,7 @@ def plan_commands(config: MouseConfig, groups=ALL_GROUPS) -> list[tuple[str, tup
 
 
 def _lock_path() -> Path:
-    base = os.environ.get("XDG_RUNTIME_DIR") or tempfile.gettempdir()
-    return Path(base) / "aerox9ctl.lock"
+    return runtime_dir() / "aerox9ctl.lock"
 
 
 @contextmanager

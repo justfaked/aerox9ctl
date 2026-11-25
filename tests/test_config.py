@@ -115,3 +115,19 @@ def test_load_file_reports_path(tmp_path):
     path.write_text("polling_rate = 3\n")
     with pytest.raises(ConfigError, match="bad.toml: polling_rate"):
         cfg.load_file(path)
+
+
+def test_runtime_dir_prefers_xdg(tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_RUNTIME_DIR", str(tmp_path / "run"))
+    assert cfg.runtime_dir() == tmp_path / "run"
+
+
+def test_runtime_dir_on_macos_ignores_tmpdir(tmp_path, monkeypatch):
+    # launchd agents get no $TMPDIR: the daemon and the CLI must still share one lock.
+    monkeypatch.delenv("XDG_RUNTIME_DIR")
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("TMPDIR", str(tmp_path / "tmp"))
+    monkeypatch.setattr(cfg.sys, "platform", "darwin")
+    path = cfg.runtime_dir()
+    assert path == tmp_path / "Library" / "Caches" / "aerox9ctl"
+    assert path.is_dir()

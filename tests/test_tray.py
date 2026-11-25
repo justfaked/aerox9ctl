@@ -130,3 +130,16 @@ def test_single_instance_lock(monkeypatch, tmp_path):
     second = tray._single_instance_lock()
     assert second is not None
     second.close()
+
+
+@pytest.mark.parametrize("platform, opens", [("linux", True), ("darwin", False)])
+def test_click_opens_settings_except_on_macos(tray_app, monkeypatch, platform, opens):
+    opened = []
+    monkeypatch.setattr(tray.sys, "platform", platform)
+    monkeypatch.setattr(tray_app, "open_settings", lambda: opened.append(True))
+    tray_app._on_activated(tray.QSystemTrayIcon.Trigger)
+    assert bool(opened) is opens
+
+
+def test_hide_dock_icon_is_harmless_without_cocoa():
+    tray._hide_dock_icon()  # no Objective-C runtime here: must just do nothing

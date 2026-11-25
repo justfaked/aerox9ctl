@@ -1,23 +1,33 @@
 #!/usr/bin/env bash
-# Install aerox9ctl for the current user, on the host or inside a distrobox container.
+# Install aerox9ctl for the current user: on Linux (host or distrobox) or macOS.
 #
-#   ./install.sh               install (or upgrade) CLI + GUI + app menu entry
+#   ./install.sh               install (or upgrade) CLI + GUI + app menu entry / app bundle
 #   ./install.sh --editable    same, but run straight from this source tree
-#   ./install.sh --daemon      also enable the lighting daemon (systemd user service)
+#   ./install.sh --daemon      also run the lighting daemon (systemd user service / launchd agent)
 #   ./install.sh --tray        also start the battery tray icon at login
 #   ./install.sh --uninstall   remove everything this script installed
 #
 # Inside distrobox, the launchers it creates in ~/.local/bin run the tool through
 # `distrobox-enter`, so `aerox9ctl` and the menu entry work from the host too.
+# Set PYTHON=/path/to/python3 to choose the interpreter (3.11 or newer).
 set -euo pipefail
 
 SRC="$(cd "$(dirname "$0")" && pwd)"
 DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
 CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
 BIN_DIR="$HOME/.local/bin"
+MACOS=0
+if [ "$(uname -s)" = Darwin ]; then MACOS=1; fi
+
+# Linux
 DESKTOP_FILE="$DATA_HOME/applications/aerox9ctl.desktop"
 UNIT_FILE="$CONFIG_HOME/systemd/user/aerox9ctl-daemon.service"
 AUTOSTART_FILE="$CONFIG_HOME/autostart/aerox9ctl-tray.desktop"
+# macOS
+APP_BUNDLE="$HOME/Applications/Aerox 9 Wireless.app"
+AGENT_DIR="$HOME/Library/LaunchAgents"
+LOG_DIR="$HOME/Library/Logs"
+AGENT_PREFIX="io.github.justfaked.aerox9ctl"
 
 CONTAINER=""
 if [ -f /run/.containerenv ]; then
@@ -33,7 +43,7 @@ for arg in "$@"; do
         --daemon) daemon=1 ;;
         --tray) tray=1 ;;
         --uninstall) uninstall=1 ;;
-        -h|--help) sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -h|--help) sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) echo "unknown option: $arg" >&2; exit 2 ;;
     esac
 done
@@ -47,8 +57,40 @@ host_systemctl() {
     fi
 }
 
+# --- launchd (macOS) ---------------------------------------------------------
+
+agent_plist() { echo "$AGENT_DIR/$AGENT_PREFIX.$1.plist"; }
+
+stop_agent() {
+    launchctl bootout "gui/$(id -u)/$AGENT_PREFIX.$1" 2>/dev/null || true
+}
+
+# install_agent daemon|tray: write the agent from its template and (re)start it now.
+install_agent() {
+    local plist
+    plist="$(agent_plist "$1")"
+    mkdir -p "$AGENT_DIR" "$LOG_DIR"
+    stop_agent "$1"
+    sed -e "s|@BIN_DIR@|$BIN_DIR|g" -e "s|@LOG_DIR@|$LOG_DIR|g" \
+        "$SRC/packaging/macos/$AGENT_PREFIX.$1.plist" > "$plist"
+    # bootout finishes asynchronously; bootstrap fails until it has.
+    for _ in 1 2 3 4 5; do
+        if launchctl bootstrap "gui/$(id -u)" "$plist" 2>/dev/null; then return 0; fi
+        sleep 1
+    done
+    launchctl bootstrap "gui/$(id -u)" "$plist"
+}
+
+# --- uninstall ---------------------------------------------------------------
+
 if [ "$uninstall" = 1 ]; then
-    if [ -f "$UNIT_FILE" ]; then
+    if [ "$MACOS" = 1 ]; then
+        for agent in daemon tray; do
+            stop_agent "$agent"
+            rm -f "$(agent_plist "$agent")"
+        done
+        rm -rf "$APP_BUNDLE"
+    elif [ -f "$UNIT_FILE" ]; then
         host_systemctl disable --now aerox9ctl-daemon.service 2>/dev/null || true
         rm -f "$UNIT_FILE"
         host_systemctl daemon-reload || true
@@ -59,13 +101,36 @@ if [ "$uninstall" = 1 ]; then
     exit 0
 fi
 
-echo "==> Creating virtualenv in $VENV"
-python3 -m venv "$VENV"
+# --- virtualenv --------------------------------------------------------------
+
+find_python() {
+    local candidate
+    for candidate in ${PYTHON:-} python3 python3.14 python3.13 python3.12 python3.11; do
+        if command -v "$candidate" >/dev/null 2>&1 &&
+            "$candidate" -c 'import sys; sys.exit(sys.version_info < (3, 11))' 2>/dev/null; then
+            echo "$candidate"
+            return 0
+        fi
+    done
+    return 1
+}
+
+if ! PYTHON_BIN="$(find_python)"; then
+    echo "error: Python 3.11 or newer is needed." >&2
+    if [ "$MACOS" = 1 ]; then
+        echo "The python3 that comes with macOS is too old. Install a newer one, e.g." >&2
+        echo "  brew install python@3.13      (or the installer from python.org)" >&2
+    fi
+    exit 1
+fi
+
+echo "==> Creating virtualenv in $VENV (with $("$PYTHON_BIN" -c 'import sys; print(sys.executable)'))"
+"$PYTHON_BIN" -m venv "$VENV"
 "$VENV/bin/python" -m pip install --quiet --upgrade pip
 if [ "$editable" = 1 ]; then
-    "$VENV/bin/python" -m pip install --quiet --editable "$SRC[gui]"
+    "$VENV/bin/python" -m pip install --quiet --editable "${SRC}[gui]"
 else
-    "$VENV/bin/python" -m pip install --quiet "$SRC[gui]"
+    "$VENV/bin/python" -m pip install --quiet "${SRC}[gui]"
 fi
 
 echo "==> Writing launchers to $BIN_DIR"
@@ -89,6 +154,48 @@ EOF
     fi
     chmod +x "$BIN_DIR/$name"
 done
+
+# --- macOS: app bundle, launchd agents ---------------------------------------
+
+if [ "$MACOS" = 1 ]; then
+    echo "==> Creating $APP_BUNDLE"
+    rm -rf "$APP_BUNDLE"
+    mkdir -p "$APP_BUNDLE/Contents/MacOS"
+    version="$(sed -n 's/^version = "\(.*\)"$/\1/p' "$SRC/pyproject.toml")"
+    sed "s|@VERSION@|$version|g" "$SRC/packaging/macos/Info.plist" > "$APP_BUNDLE/Contents/Info.plist"
+    cat > "$APP_BUNDLE/Contents/MacOS/aerox9ctl-gui" <<EOF
+#!/bin/sh
+# Generated by aerox9ctl install.sh
+exec "$VENV/bin/aerox9ctl-gui" "\$@"
+EOF
+    chmod +x "$APP_BUNDLE/Contents/MacOS/aerox9ctl-gui"
+
+    if [ "$tray" = 1 ]; then
+        echo "==> Starting the menu bar battery icon (now and at login)"
+        install_agent tray
+    fi
+    if [ "$daemon" = 1 ]; then
+        echo "==> Starting the lighting daemon (now and at login)"
+        install_agent daemon
+    fi
+
+    echo
+    echo "Done. Run 'aerox9ctl status' or open 'Aerox 9 Wireless' from Launchpad or Spotlight."
+    echo "Quit SteelSeries GG first: it keeps the mouse busy."
+    if [ "$daemon" = 0 ] && [ ! -f "$(agent_plist daemon)" ]; then
+        echo "To restore static colors automatically after sleep/power-off: ./install.sh --daemon"
+    fi
+    case ":$PATH:" in
+        *":$BIN_DIR:"*) ;;
+        *)
+            echo "Note: $BIN_DIR is not in your PATH. Add it with:"
+            echo "  echo 'export PATH=\"\$HOME/.local/bin:\$PATH\"' >> ~/.zprofile"
+            ;;
+    esac
+    exit 0
+fi
+
+# --- Linux: app menu entry, autostart, systemd -------------------------------
 
 echo "==> Adding app menu entry"
 mkdir -p "$(dirname "$DESKTOP_FILE")"

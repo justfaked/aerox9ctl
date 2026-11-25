@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Info.plist of the "Aerox 9 Wireless.app" bundle that install.sh creates in ~/Applications. -->
+<plist version="1.0">
+<dict>
+    <key>CFBundleName</key>
+    <string>Aerox 9 Wireless</string>
+    <key>CFBundleDisplayName</key>
+    <string>Aerox 9 Wireless</string>
+    <key>CFBundleIdentifier</key>
+    <string>io.github.justfaked.aerox9ctl</string>
+    <key>CFBundleExecutable</key>
+    <string>aerox9ctl-gui</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>@VERSION@</string>
+    <key>CFBundleVersion</key>
+    <string>@VERSION@</string>
+    <key>LSApplicationCategoryType</key>
+    <string>public.app-category.utilities</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>11.0</string>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+</dict>
+</plist>
